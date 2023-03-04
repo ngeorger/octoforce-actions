@@ -1,0 +1,17 @@
+{
+  "packageDirectories": [
+    {
+      "path": "force-app",
+      "default": true
+    }
+  ],
+  "name": "octoforce-actions",
+  "namespace": "",
+  "sfdcLoginUrl": "https://login.salesforce.com",
+  "sourceApiVersion": "55.0",
+  "plugins": {
+    "sfdx-plugin-prettier": {
+      "enabled": true
+    }
+  }
+}
