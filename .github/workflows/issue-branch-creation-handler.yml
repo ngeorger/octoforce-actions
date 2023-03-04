@@ -1,0 +1,92 @@
+# This workflow runs when a branch is created
+name: Issue Branch Creation Handler
+on: create
+jobs:
+  create-sandboxes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2.5.0
+        with:
+          token: ${{ secrets.SCOPED_PAT }}
+      - name: Setup Node
+        uses: actions/setup-node@v3.5.1
+        with:
+          node-version: "14"
+      - name: Cache node modules
+        uses: actions/cache@v3.0.11
+        id: npm_cache_id
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-npm-cache-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-cache-
+            ${{ runner.os }}-
+      - name: Install Dependencies
+        if: steps.npm_cache_id.outputs.cache-hit != 'true'
+        run: npm ci
+      - name: Filter branch
+        id: branchFilter
+        env:
+          ISSUE_PREFIX: ${{ vars.ISSUE_BRANCH_PREFIX }}
+        run: node ./node-scripts/branch-filter.js
+      - name: Check Release Branch
+        id: releaseFilter
+        if: vars.GENERATE_RELEASE == 'true'
+        env:
+          ISSUE_PREFIX: ${{ vars.RELEASE_BRANCH_PREFIX }}
+        run: node ./node-scripts/branch-filter.js
+      - name: Authenticate DevHub
+        if: steps.branchFilter.outputs.matches == 'true'
+        run: |
+          echo "${{ secrets.SALESFORCE_JWT_KEY }}" > server.key
+          npx sfdx force:auth:jwt:grant \
+            --clientid ${{ secrets.SALESFORCE_CLIENT_ID }} \
+            --jwtkeyfile server.key \
+            --username ${{ secrets.SALESFORCE_DEVHUB_USERNAME }} \
+            --setdefaultdevhubusername -a DevHub
+          rm server.key
+      - name: Extract Branch Name
+        if: steps.branchFilter.outputs.matches == 'true'
+        shell: bash
+        run: echo "##[set-output name=branch;]$(echo ${GITHUB_REF#refs/heads/})"
+        id: extract_branch
+      - name: Create Dev Sandbox
+        if: steps.branchFilter.outputs.matches == 'true'
+        run: |
+          set +e
+          npx sf env create sandbox --clone Template \
+            --name is${{ steps.branchFilter.outputs.issueNumber }} \
+            --alias ${{ steps.extract_branch.outputs.branch }} \
+            --target-org DevHub --async --no-prompt
+          if [ $? -eq 68 ]
+          then
+            exit 0
+          else
+            exit $?
+          fi
+      - name: Create UAT Sandbox
+        if: steps.branchFilter.outputs.matches == 'true'
+        run: |
+          set +e
+          npx sf env create sandbox --clone Template \
+            --name is${{ steps.branchFilter.outputs.issueNumber }}uat \
+            --alias ${{ steps.extract_branch.outputs.branch }}-uat \
+            --target-org DevHub --async --no-prompt
+          if [ $? -eq 68 ]
+          then
+            exit 0
+          else
+            exit $?
+          fi
+      - name: Delete Old Artifacts
+        if: vars.GENERATE_RELEASE == 'true' && steps.releaseFilter.outputs.matches == 'true'
+        run: |
+          git rm release-notes/release.md || true
+          git pull
+      - name: Commit Artifact Deletion
+        if: vars.GENERATE_RELEASE == 'true' && steps.releaseFilter.outputs.matches == 'true'
+        uses: stefanzweifel/git-auto-commit-action@75802d269e7721b5146d08f6063ba3097c55ad2b
+        with:
+          branch: ${{ github.ref }}
+          commit_message: Clear old release notes
