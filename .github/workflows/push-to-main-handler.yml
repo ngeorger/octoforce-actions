@@ -1,7 +1,9 @@
 on:
-  push:
-    branches:
-      - "main"
+#  push:
+#    branches:
+#      - "main"
+
+  workflow_dispatch:
 
 name: Create Release
 
@@ -10,7 +12,7 @@ jobs:
     name: Release to Production
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@885641592076c27bfb56c028cd5612cdad63e16d
+      - uses: actions/checkout@3
         with:
           fetch-depth: 0
           token: ${{ secrets.SCOPED_PAT }}
